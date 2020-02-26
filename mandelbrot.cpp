@@ -1,0 +1,505 @@
+#include "mandelbrot.h"
+
+int main(int argc, char *argv[]){
+
+	Mandelbrot m;
+	if(m.init(argc, argv)){
+		return 1;
+	}
+	m.run();
+	m.quit();
+	return 0;
+}
+
+int Mandelbrot::init(int argc, char * argv[])
+{
+	// parsing arguments
+	if(parseArguments(argc, argv)){
+		return 1;
+	}
+
+	// initialize framework
+	if(initWindow()){
+		return 1;
+	}
+
+	return 0;
+}
+
+int Mandelbrot::initWindow()
+{
+	//initialize SDL
+	if (SDL_Init(SDL_INIT_VIDEO) < 0){
+		printf("Failed to initialize SDL: %s\n", SDL_GetError());
+		return 1;
+	}
+
+	unsigned int sdl_flags = SDL_WINDOW_ALLOW_HIGHDPI | SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE;
+	//getting current screen resolution if fullscreen activated
+	_windowW = 800;
+	_windowH = 600;
+	if(_settings.fullscreen){
+		sdl_flags |= SDL_WINDOW_FULLSCREEN;
+		//getting current display-resolution
+		SDL_DisplayMode current;
+		if (SDL_GetDesktopDisplayMode(0, &current) != 0){
+			printf("Warning: Could not retrieve current display resolution: %s\n", SDL_GetError());
+		}
+		else{
+			_windowW = current.w;
+			_windowH = current.h;
+		}
+	}
+
+	SDL_GL_SetAttribute(SDL_GL_RED_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_GREEN_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_BLUE_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
+	SDL_GL_SetAttribute(SDL_GL_BUFFER_SIZE, 32);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
+	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
+	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+	if (_settings.multisamples > 1){
+		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
+		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, _settings.multisamples);
+	}
+
+	_mainWindow = SDL_CreateWindow("Mandelbrot", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, _windowW, _windowH, sdl_flags);
+		
+	if (_mainWindow == NULL) { //failed to create a window
+		printf("Error while creating window: %s\n", SDL_GetError());
+		return 1;
+	}
+
+	//create gl-context
+	SDL_GLContext glContext = SDL_GL_CreateContext(_mainWindow);
+	if (glContext == 0){
+		printf("Error while creating OpenGL Context: %s\n", SDL_GetError());
+		return 1;
+	}
+
+	// activate vsync
+	SDL_GL_SetSwapInterval(1);
+
+	// init glew
+	glewExperimental = GL_TRUE;// support experimental drivers
+	GLenum glew_res = glewInit();
+	if (glew_res != GLEW_OK){
+		printf("Error while initializing GLEW: %s\n", (const char *)glewGetErrorString(glew_res));
+		return 1;
+	}
+
+	//init GL parameters
+	glClearColor(1.f, 1.f, 1.f, 1.f);
+	glEnable(GL_BLEND);
+	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+	glDisable(GL_DEPTH_TEST);
+	glDisable(GL_CULL_FACE);
+	if(_settings.multisamples > 0){
+		glEnable(GL_MULTISAMPLE);
+		glEnable(GL_SAMPLE_SHADING);
+		glMinSampleShading(1.f);
+	}
+
+	// initializing screen rect buffer
+	float rect[] = {-1, -1,
+					1, -1,
+					-1, 1,
+					1, 1};
+	glGenBuffers(1, &_screenRectBuffer);
+	glBindBuffer(GL_ARRAY_BUFFER, _screenRectBuffer);
+	glBufferData(GL_ARRAY_BUFFER, sizeof(rect), rect, GL_STATIC_DRAW);
+
+	// generate color map (1d texture)
+	glGenTextures(1, &_colorMap);
+	glBindTexture(GL_TEXTURE_1D, _colorMap);
+	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, _settings.numColors, 0, GL_RGBA, GL_UNSIGNED_BYTE, _settings.colors);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+
+	// compiling shader
+	if(_shader.compile(_settings.doublePrecision)){
+		return 1;
+	}
+	_shader.use();
+	_shader.setMaxIterations(_settings.maxIterations);
+	_shader.setJulia(_settings.julia);
+	_juliaC[0] = 0; _juliaC[1] = 0;
+	_shader.setJuliaC(_juliaC);
+
+	GLint vertex_loc = _shader.getVertexLocation();
+	glEnableVertexAttribArray(vertex_loc);
+	glVertexAttribPointer(vertex_loc, 2, GL_FLOAT, GL_FALSE, 0, 0);
+
+	_zoom = MANDELBROT_INITIAL_ZOOM;
+	_zoomSpeed = 1.1;
+	if(_settings.julia)
+		_position[0] = 0.0;
+	else
+		_position[0] = MANDELBROT_INITIAL_X_OFFSET;
+	_position[1] = 0;
+	_LmousePressed = false;
+	_RmousePressed = false;
+
+	//setting viewport
+	resizeWindowEvent();
+	return 0;
+}
+
+void Mandelbrot::resizeWindowEvent(){
+	glViewport(0, 0, _windowW, _windowH);
+	_shader.setWindowSize(_windowW, _windowH);
+	updateTransform();
+}
+
+void Mandelbrot::updateTransform(){
+	float scale = _zoom;
+	/*_transform[0];*/	_transform[3] = 0.0;		_transform[6] = _position[0];
+	_transform[1] = 0;	/*_transform[4] = scale;*/ 	_transform[7] = _position[1];
+	_transform[2] = 0;	_transform[5] = 0.0; 		_transform[8] = 1.0;
+	if(_windowW > _windowH){
+		float w_aspect = static_cast<float>(_windowW)/_windowH;
+		_transform[0] = scale*w_aspect;
+		_transform[4] = scale;
+	}
+	else{
+		float h_aspect = static_cast<float>(_windowH)/_windowW;
+		_transform[0] = scale;
+		_transform[4] = scale*h_aspect;
+	}
+	_shader.setTransform(_transform);
+}
+
+void Mandelbrot::printHelp()
+{
+	puts(	"Usage: mandelbrot [options]\n"
+			"options:\n"
+			"--help                    show this help\n"
+			"--fullscreen              sets window to fullscreen mode\n"
+			"--framerate <fps>         set framerate\n"
+			"--multisamples <samples>  specify number of samples for multisampling (e.g. 2, 4, 8)\n"
+			"--max_iterations <value>  number of maximum iterations to determine whether value is in the set\n"
+			"--double_precision        use 64 bit floats instead of 32 bit floats (requires GLSL version >= 4.0)\n"
+			"--colors <file>           specify a .bmp file containing a colormap\n"
+			"--julia                   enables full julia set instead of mandelbrot (start value for z can be selected using the mouse)\n"
+			"\n"
+			"Controls:\n"
+			"Move the mouse while pressing down the left mouse button to pan.\n"
+			"Use the mouse wheel to zoom in/out.\n"
+			"Press <j> to toggle full julia set.\n"
+			"When julia set is activated, press the right mouse button to select an offset c in the function f(z) = z^2 + c.\n"
+			"Press <r> to reset everything.\n"
+			"Press <d>/<h> to double/halfen the current max_iterations.\n"
+			"Press <s> to make a screen shot (saved as 'mandelbrot.bmp').\n"
+	);
+}
+
+void Mandelbrot::run()
+{
+	_redrawEvent = true;
+	while(true){
+		Uint32 t_start = SDL_GetTicks();
+		if(processEvents()){// rerender only if something changes
+			break;
+		}
+		if(_redrawEvent){
+			clearScreen();
+			render();
+			flipScreen();
+			_redrawEvent = false;
+		}
+		Uint32 t_end = SDL_GetTicks();
+
+		int delay = 1000/_settings.fps - (t_end-t_start);
+		if(delay > 0)
+			SDL_Delay(delay);
+	}
+}
+
+void Mandelbrot::quit(){
+	SDL_Quit();
+}
+
+bool Mandelbrot::processEvents(){
+	SDL_Event e;
+	while(SDL_PollEvent(&e)){
+		switch(e.type)
+		{
+		case SDL_QUIT:
+		{
+			return true;
+		}break;
+		case SDL_WINDOWEVENT:
+		{
+			if(e.window.event == SDL_WINDOWEVENT_RESIZED)
+			{
+				_redrawEvent = true;
+				_windowW = e.window.data1;
+				_windowH = e.window.data2;
+				resizeWindowEvent();
+			}
+		}break;
+		case SDL_KEYDOWN:{
+			SDL_Keycode keysym = e.key.keysym.sym;
+			if(keysym == SDLK_ESCAPE){
+				return true;
+			}
+			else if(keysym == SDLK_j){
+				if(e.key.repeat == 0){
+					_settings.julia = !_settings.julia;
+					_shader.setJulia(_settings.julia);
+					_shader.setJuliaC(_juliaC);
+					_redrawEvent = true;
+				}
+			}
+			else if(keysym == SDLK_s){
+				if(e.key.repeat == 0){
+					saveToFile();
+				}
+			}
+			else if(keysym == SDLK_r){
+				if(e.key.repeat == 0){
+					_juliaC[0] = 0;
+					_juliaC[1] = 0;
+					_shader.setJuliaC(_juliaC);
+					if(_settings.julia)
+						_position[0] = 0;
+					else
+						_position[0] = MANDELBROT_INITIAL_X_OFFSET;
+;
+					_position[1] = 0;
+					_zoom = MANDELBROT_INITIAL_ZOOM;
+					updateTransform();
+					_redrawEvent = true;
+				}
+			}
+			else if(keysym == SDLK_d ||
+					keysym == SDLK_h){
+				if(e.key.repeat == 0){
+					if(keysym == SDLK_d){
+						_settings.maxIterations *= 2;
+					}else{
+						_settings.maxIterations /= 2;
+						if(_settings.maxIterations < 1){
+							_settings.maxIterations = 1;
+						}
+					}
+					printf("Max. Iterations: %d\n", _settings.maxIterations);
+					_shader.setMaxIterations(_settings.maxIterations);
+					_redrawEvent = true;
+				}
+			}
+		}break;
+		case SDL_MOUSEWHEEL:{
+			float zoom_before = _zoom;
+			if(e.wheel.y < 0){
+				int max = -e.wheel.y;
+				for(int i = 0; i < max; i++){
+					_zoom *= _zoomSpeed;
+				}
+			}
+			else{
+				int max = e.wheel.y;
+				for(int i = 0; i < max; i++){
+					_zoom /= _zoomSpeed;
+				}
+			}
+			double world_mouse[2];
+			double center[2];
+			double rel_zoom = zoom_before/_zoom;
+			int mouse[2];
+			getWorldMousePos(_windowW/2.0f, _windowH/2.0f, center);
+			SDL_GetMouseState(mouse, mouse+1);
+			getWorldMousePos(mouse[0], mouse[1], world_mouse);
+			double delta[2];
+			delta[0] = (center[0]-world_mouse[0]);
+			delta[1] = (center[1]-world_mouse[1]);
+			_position[0] -= delta[0]*rel_zoom -delta[0];
+			_position[1] -= delta[1]*rel_zoom -delta[1];
+			_redrawEvent = true;
+			updateTransform();
+		}break;
+		case SDL_MOUSEBUTTONDOWN:{
+			if(e.button.button == SDL_BUTTON_RIGHT){
+				_RmousePressed = true;
+				updateJuliaCFromMousePos(e.motion.x, e.motion.y);
+				_redrawEvent = true;
+			}else if(e.button.button == SDL_BUTTON_LEFT){
+				_LmousePressed = true;
+			}
+		}break;
+		case SDL_MOUSEBUTTONUP:{
+			if(e.button.button == SDL_BUTTON_RIGHT){
+				_RmousePressed = false;
+			}else if(e.button.button == SDL_BUTTON_LEFT){
+				_LmousePressed = false;
+			}
+		}break;
+		case SDL_MOUSEMOTION:{
+			if(_LmousePressed){
+				_position[0] -= 2*_transform[0]*e.motion.xrel/static_cast<double>(_windowW);
+				_position[1] -= -2*_transform[4]*e.motion.yrel/static_cast<double>(_windowH);
+				updateTransform();
+				_redrawEvent = true;
+			}
+			if(_RmousePressed){
+				updateJuliaCFromMousePos(e.motion.x, e.motion.y);
+				_redrawEvent = true;
+			}
+		}break;
+		default:{
+		}
+		}
+	}
+	return false;
+}
+
+void Mandelbrot::getWorldMousePos(int mouse_x, int mouse_y, double * pos){
+	pos[0] = _transform[0]*(2*mouse_x/static_cast<double>(_windowW) - 1) +  _position[0];
+	pos[1] = _transform[4]*(-2*mouse_y/static_cast<double>(_windowH) + 1) + _position[1];
+}
+
+void Mandelbrot::updateJuliaCFromMousePos(int mouse_x, int mouse_y)
+{
+	getWorldMousePos(mouse_x, mouse_y, _juliaC);
+	_shader.setJuliaC(_juliaC);
+}
+
+int Mandelbrot::parseArguments(int argc, char * argv[])
+{
+	char * color_path = NULL;
+	for(int i = 1; i < argc; i++)
+	{
+		if(!strcmp(argv[i], "--fullscreen")){
+			_settings.fullscreen = true;
+		}
+		else if(!strcmp(argv[i], "--framerate")){
+			i++;
+			if(i < argc){
+				_settings.fps = atoi(argv[i]);		
+				if(_settings.fps < 1){
+					_settings.fps = 1;
+				}
+			}
+			else{
+				puts("No framerate specified!");
+				return 1;
+			}
+		}
+		else if(!strcmp(argv[i], "--max_iterations")){
+			i++;
+			if(i < argc){
+				_settings.maxIterations = atoi(argv[i]);
+				if(_settings.maxIterations <= 0){
+					_settings.maxIterations = 1;
+				}
+			}
+			else{
+				puts("No value specified for --max_iterations!");
+				return 1;
+			}
+		}
+		else if(!strcmp(argv[i], "--multisamples")){
+			i++;
+			if(i < argc){
+				_settings.multisamples = atoi(argv[i]);	
+				if(_settings.multisamples < 0){
+					_settings.multisamples = 0;
+				}
+			}
+			else{
+				puts("No value specified for --multisamples!");
+				return 1;
+			}
+		}
+		else if(!strcmp(argv[i], "--colors")){
+			i++;
+			if(i < argc){
+				color_path = argv[i];
+			}
+			else{
+				puts("No file specified for --colors!");
+				return 1;
+			}
+		}
+		else if(!strcmp(argv[i], "--julia")){
+			_settings.julia = true;	
+		}
+		else if(!strcmp(argv[i], "--double_precision")){
+			_settings.doublePrecision = true;	
+		}
+		else if(!strcmp(argv[i], "--help") ||
+				!strcmp(argv[i], "-h")){
+			printHelp();
+			return 1;	
+		}
+		else{
+			printf("Unknown option '%s'!\n", argv[i]);
+			return 1;
+		}
+	}
+
+	if(color_path != NULL){
+		//open file for reading
+		SDL_Surface * s = SDL_LoadBMP(color_path);
+		if(s == NULL){
+			puts(SDL_GetError());
+			return 1;
+		}
+		int min = MANDELBROT_MAX_COLORS;
+		if(s->w < min)
+			min = s->w;
+		_settings.numColors = min;
+		printf("%d Bytes per pixel!\n", s->format->BytesPerPixel);
+		switch(s->format->BytesPerPixel){
+			case 1:{
+			for(int i = 0; i < min ; i++){
+				_settings.colors[i] = ((Uint8*)s->pixels)[i];
+			}
+			}break;
+			case 2:{
+			for(int i = 0; i < min ; i++){
+				_settings.colors[i] = ((Uint16*)s->pixels)[i];
+			}
+			}break;
+			case 3:
+			case 4:{
+			for(int i = 0; i < min ; i++){
+				_settings.colors[i] = ((Uint32*)s->pixels)[i];
+			}
+			}break;
+		}
+		SDL_FreeSurface(s);
+	}
+
+	return 0;
+}
+
+void Mandelbrot::render(){
+	glPointSize(10);
+	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+}
+
+void Mandelbrot::saveToFile(){
+	const char * path = "mandelbrot.bmp";
+	SDL_Surface *s = SDL_CreateRGBSurface(0, _windowW, _windowH, 32, 0,0,0,0);
+	glReadPixels(0, 0, _windowW, _windowH, GL_RGBA, GL_UNSIGNED_BYTE, s->pixels);
+	int size = _windowW*_windowH;
+	Uint32 * pixels = ((Uint32*)s->pixels);
+	for(int i =0; i < size/2; i++){
+		int x = i%_windowW;
+		int y = i/_windowW;
+		int mirrored_index = (_windowH-y-1)*_windowW + x;
+		Uint32 p = pixels[mirrored_index];
+		pixels[mirrored_index] = pixels[i];
+		pixels[i] = p;
+	}
+	if(SDL_SaveBMP(s, path)){
+		puts(SDL_GetError());
+	}
+	SDL_FreeSurface(s);
+}
