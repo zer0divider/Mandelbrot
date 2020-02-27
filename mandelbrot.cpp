@@ -267,9 +267,6 @@ bool Mandelbrot::processEvents(){
 			}
 			else if(keysym == SDLK_r){
 				if(e.key.repeat == 0){
-					_juliaC[0] = 0;
-					_juliaC[1] = 0;
-					_shader.setJuliaC(_juliaC);
 					if(_settings.julia)
 						_position[0] = 0;
 					else
