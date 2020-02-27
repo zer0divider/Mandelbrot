@@ -19,10 +19,12 @@ struct MandelbrotSettings{
 		colors[1] = 0xFFFFFF;
 		numColors = 2;
 		doublePrecision = false;
+		nearest = false;
 	}
 	
 	bool julia;
 	bool doublePrecision;
+	bool nearest;
 	int maxIterations;
 	Uint32 colors[MANDELBROT_MAX_COLORS];
 	int numColors;
@@ -65,6 +67,7 @@ private:
 	double _transform[9];
 	double _zoom;
 	double _zoomSpeed;
+	double _maxZoom;
 	double _position[2];
 	double _juliaC[2];
 	bool _LmousePressed;

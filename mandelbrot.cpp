@@ -117,8 +117,11 @@ int Mandelbrot::initWindow()
 	glGenTextures(1, &_colorMap);
 	glBindTexture(GL_TEXTURE_1D, _colorMap);
 	glTexImage1D(GL_TEXTURE_1D, 0, GL_RGB, _settings.numColors, 0, GL_RGBA, GL_UNSIGNED_BYTE, _settings.colors);
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+	GLint filter = GL_LINEAR;
+	if(_settings.nearest)
+		filter = GL_NEAREST;
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MIN_FILTER, filter);
+	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_MAG_FILTER, filter);
 	glTexParameteri(GL_TEXTURE_1D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
 
 	// compiling shader
@@ -186,6 +189,7 @@ void Mandelbrot::printHelp()
 			"--double_precision        use 64 bit floats instead of 32 bit floats (requires GLSL version >= 4.0)\n"
 			"--colors <file>           specify a .bmp file containing a colormap\n"
 			"--julia                   enables full julia set instead of mandelbrot (start value for z can be selected using the mouse)\n"
+			"--nearest                 use nearest texture filtering for the color map instead of linear"
 			"\n"
 			"Controls:\n"
 			"Move the mouse while pressing down the left mouse button to pan.\n"
@@ -195,6 +199,7 @@ void Mandelbrot::printHelp()
 			"Press <r> to reset everything.\n"
 			"Press <d>/<h> to double/halfen the current max_iterations.\n"
 			"Press <s> to make a screen shot (saved as 'mandelbrot.bmp').\n"
+			"Press <m> toggle multisampling (only available if option --multisamples set).\n"
 	);
 }
 
@@ -293,6 +298,19 @@ bool Mandelbrot::processEvents(){
 					_redrawEvent = true;
 				}
 			}
+			else if(keysym == SDLK_m){
+				if(e.key.repeat == 0 && _settings.multisamples > 0){
+					if(glIsEnabled(GL_MULTISAMPLE)){
+						glDisable(GL_MULTISAMPLE);
+						glDisable(GL_SAMPLE_SHADING);
+					}
+					else{
+						glEnable(GL_MULTISAMPLE);
+						glEnable(GL_SAMPLE_SHADING);
+					}
+					_redrawEvent = true;
+				}
+			}
 		}break;
 		case SDL_MOUSEWHEEL:{
 			float zoom_before = _zoom;
@@ -308,6 +326,7 @@ bool Mandelbrot::processEvents(){
 					_zoom /= _zoomSpeed;
 				}
 			}
+			printf("zoom: %.10f\n", _zoom);
 			double world_mouse[2];
 			double center[2];
 			double rel_zoom = zoom_before/_zoom;
@@ -432,6 +451,9 @@ int Mandelbrot::parseArguments(int argc, char * argv[])
 		else if(!strcmp(argv[i], "--double_precision")){
 			_settings.doublePrecision = true;	
 		}
+		else if(!strcmp(argv[i], "--nearest")){
+			_settings.nearest = true;	
+		}
 		else if(!strcmp(argv[i], "--help") ||
 				!strcmp(argv[i], "-h")){
 			printHelp();
@@ -458,18 +480,85 @@ int Mandelbrot::parseArguments(int argc, char * argv[])
 		switch(s->format->BytesPerPixel){
 			case 1:{
 			for(int i = 0; i < min ; i++){
-				_settings.colors[i] = ((Uint8*)s->pixels)[i];
+				Uint8 value = ((Uint8*)s->pixels)[i];
+				_settings.colors[i] = 0xFF000000 | value<<16 | value<<8 | value;
 			}
 			}break;
 			case 2:{
 			for(int i = 0; i < min ; i++){
-				_settings.colors[i] = ((Uint16*)s->pixels)[i];
+				_settings.colors[i] = 0xFF000000 | ((Uint16*)s->pixels)[i];
 			}
 			}break;
 			case 3:
 			case 4:{
-			for(int i = 0; i < min ; i++){
-				_settings.colors[i] = ((Uint32*)s->pixels)[i];
+				printf("Rmask: 0x%.8x\n", s->format->Rmask);
+				printf("Gmask: 0x%.8x\n", s->format->Gmask);
+				printf("Bmask: 0x%.8x\n", s->format->Bmask);
+				printf("Amask: 0x%.8x\n", s->format->Amask);
+				int R_bit_pos = 0, G_bit_pos = 0, B_bit_pos = 0, A_bit_pos;
+			if(s->format->Rmask == 0x000000FF){
+				R_bit_pos = 0;
+				A_bit_pos = 24;
+				if(s->format->Gmask == 0x0000FF00){
+					G_bit_pos = 8;
+					B_bit_pos = 16;
+				}
+				else{
+					printf("Unrecognized color format in '%s'!\n", color_path);
+					SDL_FreeSurface(s);
+					return 1;
+				}
+			}
+			else if(s->format->Rmask == 0xFF000000){
+				R_bit_pos = 24;
+				A_bit_pos = 0;
+				if(s->format->Gmask == 0x00FF0000){
+					G_bit_pos = 16;
+					B_bit_pos = 8;
+				}
+				else{
+					printf("Unrecognized color format in '%s'!\n", color_path);
+					SDL_FreeSurface(s);
+					return 1;
+				}
+			}
+			else if(s->format->Rmask == 0x00FF0000){
+				R_bit_pos = 16;
+				A_bit_pos = 24;
+				if(s->format->Gmask == 0x0000FF00){
+					G_bit_pos = 8;
+					B_bit_pos = 0;
+				}
+				else{
+					printf("Unrecognized color format in '%s'!\n", color_path);
+					SDL_FreeSurface(s);
+					return 1;
+				}
+			}
+			else{
+				printf("Unrecognized color format in '%s'!\n", color_path);
+				SDL_FreeSurface(s);
+				return 1;
+			}
+			printf("R bit position: %d\n", R_bit_pos);
+			printf("G bit position: %d\n", G_bit_pos);
+			printf("B bit position: %d\n", B_bit_pos);
+			if(s->format->BytesPerPixel == 3){
+				for(int i = 0; i < min*3; i++){
+					Uint32 r = ((Uint8*)s->pixels)[i*3 + 2];
+					Uint32 g = ((Uint8*)s->pixels)[i*3 + 1]<<8;
+					Uint32 b = ((Uint8*)s->pixels)[i*3 + 0]<<16;
+					_settings.colors[i] = 	r | g | b | 0xFF000000;	
+				}
+			}
+			else{
+				for(int i = 0; i < min ; i++){
+					Uint32 color = ((Uint32*)s->pixels)[i];
+					_settings.colors[i] = 	((color&s->format->Rmask)>>R_bit_pos) |
+											(((color&s->format->Gmask)>>G_bit_pos)<<8) |
+											(((color&s->format->Bmask)>>B_bit_pos)<<16) |
+											(((color&s->format->Amask)>>A_bit_pos)<<24);
+				}
 			}
 			}break;
 		}
@@ -486,7 +575,7 @@ void Mandelbrot::render(){
 
 void Mandelbrot::saveToFile(){
 	const char * path = "mandelbrot.bmp";
-	SDL_Surface *s = SDL_CreateRGBSurface(0, _windowW, _windowH, 32, 0,0,0,0);
+	SDL_Surface *s = SDL_CreateRGBSurface(0, _windowW, _windowH, 32, 0x000000FF,0x0000FF00,0x00FF0000,0xFF000000);
 	glReadPixels(0, 0, _windowW, _windowH, GL_RGBA, GL_UNSIGNED_BYTE, s->pixels);
 	int size = _windowW*_windowH;
 	Uint32 * pixels = ((Uint32*)s->pixels);
