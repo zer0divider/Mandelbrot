@@ -12,7 +12,7 @@ const char * MANDEL_VERTEX_SHADER =
 "uniform vec2 sobol_map[16];\n"
 
 #define SOBOL_SAMPLING_START \
-"for(int sample = 0; sample < num_samples; sample++){\n"
+"for(int sample_i = 0; sample_i < num_samples; sample_i++){\n"
 
 #define SOBOL_SAMPLING_END \
 " }\n" \
@@ -36,7 +36,7 @@ const char * MANDEL_FRAGMENT_SHADER =
 	"void main(void){\n"
 	"  color = vec4(0);\n"
 	SOBOL_SAMPLING_START
-	"  vec2 p = vec2(2*(gl_FragCoord.x+sobol_map[sample].x)/window_size.x-1, 2*(gl_FragCoord.y+sobol_map[sample].y)/window_size.y-1);\n"
+	"  vec2 p = vec2(2*(gl_FragCoord.xy+sobol_map[sample_i])/window_size - vec2(1, 1));\n"
 	"  p = (transform*vec3(p, 1)).xy;\n"
 	"  float s = 1;"
 	"  if(julia == 0){\n"
@@ -73,11 +73,11 @@ const char * MANDEL_FRAGMENT_SHADER_DOUBLE =
 	"}\n"
 	"double lensqrd(dvec2 v){return sqrt(v.x*v.x + v.y*v.y);}\n"
 	"void main(void){\n"
-	"  color = vec4(0);"
-	"  dvec2 p = dvec2(2*(gl_FragCoord.x+sobol_map[sample].x)/window_size.x-1, 2*(gl_FragCoord.y+sobol_map[sample].y)/window_size.y-1);\n"
+	"  color = vec4(0, 0, 0, 0);\n"
 	SOBOL_SAMPLING_START
+	"  dvec2 p = dvec2(2*(gl_FragCoord.xy+sobol_map[sample_i])/window_size - dvec2(1, 1));\n"
 	"  p = (transform*dvec3(p, 1)).xy;\n"
-	"  float s = 1;"
+	"  float s = 1;\n"
 	"  if(julia == 0){\n"
 	"  dvec2 z = dvec2(0,0);\n"
 	"  for(int i = 0; i < max_iterations; i++){\n"

@@ -13,6 +13,13 @@ int main(int argc, char *argv[]){
 
 int Mandelbrot::init(int argc, char * argv[])
 {
+
+	_juliaC[0] = 0; _juliaC[1] = 0;
+	_zoom = MANDELBROT_INITIAL_ZOOM;
+	_zoomSpeed = 1.1;
+	_position[0] = MANDELBROT_INITIAL_X_OFFSET;
+	_position[1] = 0;
+
 	// parsing arguments
 	if(parseArguments(argc, argv)){
 		return 1;
@@ -136,19 +143,9 @@ int Mandelbrot::initWindow()
 		_shader.setNumSamples(_settings.multisamples);
 		_multisampleEnabled = true;
 	}
-	_juliaC[0] = 0; _juliaC[1] = 0;
-	_shader.setJuliaC(_juliaC);
-
-
-	_zoom = MANDELBROT_INITIAL_ZOOM;
-	_zoomSpeed = 1.1;
-	if(_settings.julia)
-		_position[0] = 0.0;
-	else
-		_position[0] = MANDELBROT_INITIAL_X_OFFSET;
-	_position[1] = 0;
 	_LmousePressed = false;
 	_RmousePressed = false;
+	_shader.setJuliaC(_juliaC);
 
 	//setting viewport
 	resizeWindowEvent();
@@ -448,6 +445,71 @@ int Mandelbrot::parseArguments(int argc, char * argv[])
 		else if(!strcmp(argv[i], "--nearest")){
 			_settings.nearest = true;	
 		}
+		else if(!strcmp(argv[i], "--location")){
+			i++;
+			if(i < argc){
+				double d1;
+				double d2;
+				char buffer[512];
+				FILE * f = fopen(argv[i], "r");
+				int ret = 0;
+				while(fgets(buffer, 512, f))
+				{
+					int attrib_start = 0;
+					int buffer_len = strlen(buffer);
+					while(isspace(buffer[attrib_start])){attrib_start++;}
+					int attrib_end = attrib_start+1;
+					while(!isspace(buffer[attrib_end])){attrib_end++;}
+					buffer[attrib_end] = '\0';
+					const char * attrib_name = &buffer[attrib_start];
+					const char * values = &buffer[attrib_end];
+					if(buffer_len > attrib_end+1){
+						values = &buffer[attrib_end+1];
+					}
+					if(!strcmp(attrib_name, "position")){
+						if(sscanf(values, "%lf %lf", &_position[0], &_position[1]) == 2){
+							printf("Setting position to (%.20f, %.20f)\n", _position[0], _position[1]);
+						}else{
+							printf("Error: Expected 2 values for attribute '%s'!\n", attrib_name);
+							break;
+						}
+					}
+					else if(!strcmp(attrib_name, "zoom")){
+						if(sscanf(values, "%lf", &_zoom) == 1){
+							printf("Setting zoom to %.20f\n", _zoom);
+						}else{
+							printf("Error: Expected 1 values for attribute '%s'!\n", attrib_name);
+							break;
+						}
+					}
+					else if(!strcmp(attrib_name, "julia_c")){
+						if(sscanf(values, "%lf %lf", &_juliaC[0], &_juliaC[1]) == 2){
+							printf("Setting full julia set c offset to (%.20f, %.20f)\n", _juliaC[0], _juliaC[1]);
+							_settings.julia = true;
+						}else{
+							printf("Error: Expected 2 values for attribute '%s'!\n", attrib_name);
+							break;
+						}
+					}
+					else if(!strcmp(attrib_name, "iterations")){
+						if(sscanf(values, "%d", &_settings.maxIterations) == 1){
+							printf("Setting max. iterations to %d\n", _settings.maxIterations);
+						}else{
+							printf("Error: Expected 2 values for attribute '%s'!\n", attrib_name);
+							break;
+						}
+					}
+					else{
+						printf("Warning: Unknown attribute '%s' encountered while loading location from '%s'!\n", attrib_name, argv[i]);
+					}
+				}
+				fclose(f);
+			}
+			else{
+				puts("No file specfied for --location");
+				return 1;
+			}
+		}
 		else if(!strcmp(argv[i], "--help") ||
 				!strcmp(argv[i], "-h")){
 			printHelp();
@@ -591,4 +653,18 @@ void Mandelbrot::saveToFile(){
 		puts(SDL_GetError());
 	}
 	SDL_FreeSurface(s);
+
+	// saving text file with parameters
+	const char * location_path = "mandelbrot.bmp.txt";
+	FILE * f = fopen(location_path, "w");
+	if(f == NULL){
+		printf("Failed to save location file '%s'!", location_path);
+	}
+	else{
+		fprintf(f, "position %.20f %.20f\nzoom %.20f\niterations %d", _position[0], _position[1], _zoom, _settings.maxIterations);
+		if(_settings.julia){
+			fprintf(f, "\njulia_c %.20f %.20f", _juliaC[0], _juliaC[1]);
+		}
+		fclose(f);
+	}
 }
