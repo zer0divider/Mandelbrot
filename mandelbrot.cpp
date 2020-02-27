@@ -62,11 +62,6 @@ int Mandelbrot::initWindow()
 	SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 	SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
 
-	if (_settings.multisamples > 1){
-		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLEBUFFERS, 1);
-		SDL_GL_SetAttribute(SDL_GL_MULTISAMPLESAMPLES, _settings.multisamples);
-	}
-
 	_mainWindow = SDL_CreateWindow("Mandelbrot", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, _windowW, _windowH, sdl_flags);
 		
 	if (_mainWindow == NULL) { //failed to create a window
@@ -98,11 +93,6 @@ int Mandelbrot::initWindow()
 	glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 	glDisable(GL_DEPTH_TEST);
 	glDisable(GL_CULL_FACE);
-	if(_settings.multisamples > 0){
-		glEnable(GL_MULTISAMPLE);
-		glEnable(GL_SAMPLE_SHADING);
-		glMinSampleShading(1.f);
-	}
 
 	// initializing screen rect buffer
 	float rect[] = {-1, -1,
@@ -112,6 +102,12 @@ int Mandelbrot::initWindow()
 	glGenBuffers(1, &_screenRectBuffer);
 	glBindBuffer(GL_ARRAY_BUFFER, _screenRectBuffer);
 	glBufferData(GL_ARRAY_BUFFER, sizeof(rect), rect, GL_STATIC_DRAW);
+
+	glGenBuffers(NUM_SOBOL_MAPS, _sobolBuffer);
+	for(int i = 0; i < NUM_SOBOL_MAPS; i++){
+		glBindBuffer(GL_ARRAY_BUFFER, _sobolBuffer[i]);
+		glBufferData(GL_ARRAY_BUFFER, sizeof(float)*(1<<i)*2, SOBOL_MAPS[i], GL_STATIC_DRAW);
+	}
 
 	// generate color map (1d texture)
 	glGenTextures(1, &_colorMap);
@@ -131,12 +127,18 @@ int Mandelbrot::initWindow()
 	_shader.use();
 	_shader.setMaxIterations(_settings.maxIterations);
 	_shader.setJulia(_settings.julia);
+	_multisampleEnabled = false;
+	if(_settings.multisamples > 0){
+		if(_settings.multisamples > 16){
+			puts("Warning: Maximum number of multisamples is 16!");
+			_settings.multisamples = 16;
+		}
+		_shader.setNumSamples(_settings.multisamples);
+		_multisampleEnabled = true;
+	}
 	_juliaC[0] = 0; _juliaC[1] = 0;
 	_shader.setJuliaC(_juliaC);
 
-	GLint vertex_loc = _shader.getVertexLocation();
-	glEnableVertexAttribArray(vertex_loc);
-	glVertexAttribPointer(vertex_loc, 2, GL_FLOAT, GL_FALSE, 0, 0);
 
 	_zoom = MANDELBROT_INITIAL_ZOOM;
 	_zoomSpeed = 1.1;
@@ -293,21 +295,14 @@ bool Mandelbrot::processEvents(){
 							_settings.maxIterations = 1;
 						}
 					}
-					printf("Max. Iterations: %d\n", _settings.maxIterations);
 					_shader.setMaxIterations(_settings.maxIterations);
 					_redrawEvent = true;
 				}
 			}
-			else if(keysym == SDLK_m){
+			else if(keysym == SDLK_m){// toggle multisampling
 				if(e.key.repeat == 0 && _settings.multisamples > 0){
-					if(glIsEnabled(GL_MULTISAMPLE)){
-						glDisable(GL_MULTISAMPLE);
-						glDisable(GL_SAMPLE_SHADING);
-					}
-					else{
-						glEnable(GL_MULTISAMPLE);
-						glEnable(GL_SAMPLE_SHADING);
-					}
+					_multisampleEnabled = !_multisampleEnabled;
+					_shader.setNumSamples(_multisampleEnabled? _settings.multisamples : 1);
 					_redrawEvent = true;
 				}
 			}
@@ -326,7 +321,6 @@ bool Mandelbrot::processEvents(){
 					_zoom /= _zoomSpeed;
 				}
 			}
-			printf("zoom: %.10f\n", _zoom);
 			double world_mouse[2];
 			double center[2];
 			double rel_zoom = zoom_before/_zoom;
@@ -476,7 +470,6 @@ int Mandelbrot::parseArguments(int argc, char * argv[])
 		if(s->w < min)
 			min = s->w;
 		_settings.numColors = min;
-		printf("%d Bytes per pixel!\n", s->format->BytesPerPixel);
 		switch(s->format->BytesPerPixel){
 			case 1:{
 			for(int i = 0; i < min ; i++){
@@ -491,10 +484,6 @@ int Mandelbrot::parseArguments(int argc, char * argv[])
 			}break;
 			case 3:
 			case 4:{
-				printf("Rmask: 0x%.8x\n", s->format->Rmask);
-				printf("Gmask: 0x%.8x\n", s->format->Gmask);
-				printf("Bmask: 0x%.8x\n", s->format->Bmask);
-				printf("Amask: 0x%.8x\n", s->format->Amask);
 				int R_bit_pos = 0, G_bit_pos = 0, B_bit_pos = 0, A_bit_pos;
 			if(s->format->Rmask == 0x000000FF){
 				R_bit_pos = 0;
@@ -540,9 +529,6 @@ int Mandelbrot::parseArguments(int argc, char * argv[])
 				SDL_FreeSurface(s);
 				return 1;
 			}
-			printf("R bit position: %d\n", R_bit_pos);
-			printf("G bit position: %d\n", G_bit_pos);
-			printf("B bit position: %d\n", B_bit_pos);
 			if(s->format->BytesPerPixel == 3){
 				for(int i = 0; i < min*3; i++){
 					Uint32 r = ((Uint8*)s->pixels)[i*3 + 2];
@@ -569,8 +555,22 @@ int Mandelbrot::parseArguments(int argc, char * argv[])
 }
 
 void Mandelbrot::render(){
-	glPointSize(10);
+	GLint vertex_loc = _shader.getVertexLocation();
+	glEnableVertexAttribArray(vertex_loc);
+
+	// drawing rectangle covering the whole screen
+	glBindBuffer(GL_ARRAY_BUFFER, _screenRectBuffer);
+	glVertexAttribPointer(vertex_loc, 2, GL_FLOAT, GL_FALSE, 0, 0);
 	glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+
+	/*
+	// visualizing sobol patterns
+	glPointSize(10);
+	int sobol_index = 3;
+	glBindBuffer(GL_ARRAY_BUFFER, _sobolBuffer[sobol_index]);
+	glVertexAttribPointer(vertex_loc, 2, GL_FLOAT, GL_FALSE, 0, 0);
+	glDrawArrays(GL_POINTS, 0, 1<<sobol_index);
+	*/
 }
 
 void Mandelbrot::saveToFile(){

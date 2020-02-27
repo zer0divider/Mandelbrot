@@ -4,6 +4,8 @@
 extern const char * MANDEL_VERTEX_SHADER;
 extern const char * MANDEL_FRAGMENT_SHADER;
 extern const char * MANDEL_FRAGMENT_SHADER_DOUBLE;
+#define NUM_SOBOL_MAPS 5
+extern const float * SOBOL_MAPS[NUM_SOBOL_MAPS];
 
 class MandelShader{
 public:
@@ -31,6 +33,8 @@ public:
 			glUniform2d(_juliaCLocation, c[0], c[1]);
 	}
 	void setJulia(bool enabled){glUniform1i(_juliaLocation, enabled ? 1 : 0);}
+
+	void setNumSamples(unsigned int n);
 private:
 	bool _doublePrecision;
 	GLuint _programID;
@@ -41,4 +45,6 @@ private:
 	GLint _maxIterationsLocation;
 	GLint _juliaCLocation;
 	GLint _juliaLocation;
+	GLint _numSamplesLocation;
+	GLint _sampleMapLocation;
 };

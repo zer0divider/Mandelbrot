@@ -62,6 +62,7 @@ private:
 	int _windowH;
 	bool _redrawEvent;
 	GLuint _screenRectBuffer;
+	GLuint _sobolBuffer[NUM_SOBOL_MAPS];
 	MandelShader _shader;
 	GLuint _colorMap;
 	double _transform[9];
@@ -72,5 +73,6 @@ private:
 	double _juliaC[2];
 	bool _LmousePressed;
 	bool _RmousePressed;
+	bool _multisampleEnabled;
 };
 

@@ -75,8 +75,26 @@ int MandelShader::compile(bool d)
 		_transformLocation = glGetUniformLocation(_programID, "transform");
 		_juliaCLocation = glGetUniformLocation(_programID, "julia_c");
 		_juliaLocation = glGetUniformLocation(_programID, "julia");
+		_numSamplesLocation = glGetUniformLocation(_programID, "num_samples");
+		_sampleMapLocation = glGetUniformLocation(_programID, "sobol_map");
 		glUniform1i(_colorMapLocation, 0);// default target: 0
+		setNumSamples(1);
 	}
 	//return number of errors
 	return error;
+}
+
+void MandelShader::setNumSamples(unsigned int n){
+	int sobol_index = 0;
+	n = n>>1;
+	while(n != 0){
+		n = n>>1;
+		sobol_index++;
+	}
+	if(sobol_index > NUM_SOBOL_MAPS-1){
+		sobol_index = NUM_SOBOL_MAPS-1;
+	}
+	n = 1<<sobol_index;
+	glUniform1i(_numSamplesLocation, n);
+	glUniform2fv(_sampleMapLocation, n, SOBOL_MAPS[sobol_index]);
 }
