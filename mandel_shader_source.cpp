@@ -1,6 +1,6 @@
 const char * MANDEL_VERTEX_SHADER = 
-	"#version 130\n"
-	"in vec2 vertex;\n"
+	"#version 120\n"
+	"attribute vec2 vertex;\n"
 	"void main(void){\n"
 	"  gl_Position = vec4(vertex, 0, 1);\n"
 	"\n"
@@ -19,8 +19,7 @@ const char * MANDEL_VERTEX_SHADER =
 "color /= float(num_samples);\n" \
 
 const char * MANDEL_FRAGMENT_SHADER = 
-	"#version 130\n"
-	"out vec4 color;\n"
+	"#version 120\n"
 	"uniform int max_iterations;\n"
 	"uniform mat3 transform;\n"
 	"uniform vec2 window_size;\n"
@@ -34,7 +33,7 @@ const char * MANDEL_FRAGMENT_SHADER =
 	"}\n"
 	"float lensqrd(vec2 v){return v.x*v.x + v.y*v.y;}\n"
 	"void main(void){\n"
-	"  color = vec4(0);\n"
+	"  vec4 color = vec4(0);\n"
 	SOBOL_SAMPLING_START
 	"  vec2 p = vec2(2*(gl_FragCoord.xy+sobol_map[sample_i])/window_size - vec2(1, 1));\n"
 	"  p = (transform*vec3(p, 1)).xy;\n"
@@ -52,8 +51,9 @@ const char * MANDEL_FRAGMENT_SHADER =
 	"    z = mandel_iterate(z, julia_c);\n"
 	"  }\n"
 	"  }\n"
-	"  color += texture(color_map, s);\n"
+	"  color += texture1D(color_map, s);\n"
 	SOBOL_SAMPLING_END
+	"  gl_FragColor = color;"
 	"}"
 ;
 
