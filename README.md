@@ -29,12 +29,12 @@ This simple C++ programm implements a configurable realtime visualizer for the c
 ## Controls:
 - Move the mouse while pressing down the left mouse button to pan
 - Use the mouse wheel to zoom in/out
-- Press <j> to toggle full julia set
+- Press `<j>` to toggle full julia set
 - When julia set is activated, press the right mouse button to select an offset c in the function `f(z) = z^2 + c`
-- Press <r> to reset everything
-- Press <d>/<h> to double/halfen the current maximum iterations
-- Press <s> to make a screen shot (saved as `mandelbrot.bmp`)
-- Press <m> toggle multisampling (only available if option `--multisamples` was set)
+- Press `<r>` to reset everything
+- Press `<d>`/`<h>` to double/halfen the current maximum iterations
+- Press `<s>` to make a screen shot (saved as `mandelbrot.bmp`)
+- Press `<m>` toggle multisampling (only available if option `--multisamples` was set)
 
 ## References
 - Wikipedia: https://en.wikipedia.org/wiki/Mandelbrot_set
