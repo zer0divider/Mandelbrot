@@ -11,10 +11,6 @@ set(MANDELBROT_SOURCES
 	mandel_shader.h
 	mandel_shader.cpp
 	mandel_shader_source.cpp
-#	framework.cpp
-#	framework.h
-#	shader.cpp
-#	shader.h
 )
 
 include_directories(${OPENGL_INCLUDE_DIRS})
