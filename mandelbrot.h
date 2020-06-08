@@ -1,6 +1,9 @@
 #include <SDL2/SDL.h>
 #include "mandel_shader.h"
 #include <string.h>
+#include <cstring>
+#include <cstdlib>
+#include <ctype.h>
 
 #define MANDELBROT_MAX_COLORS 1024
 #define MANDELBROT_INITIAL_ZOOM 1.2
@@ -29,6 +32,21 @@ struct MandelbrotSettings{
 	bool fullscreen;
 	int fps;
 	int multisamples;
+
+	void print(){
+		printf(
+			"Settings:\n"
+			"-> fullscreen:      %d\n"
+			"-> fps:             %d\n"
+			"-> multisamples:    %d\n"
+			"-> maxIterations:   %d\n"
+			"-> doublePrecision: %d\n"
+			"-> nearest:         %d\n"
+			"-> numColors:       %d\n",
+			fullscreen, fps, multisamples, maxIterations, doublePrecision,
+			nearest, numColors
+		);
+	}
 };
 
 // Mandelbrot class

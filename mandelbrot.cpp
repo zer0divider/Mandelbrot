@@ -20,10 +20,35 @@ int Mandelbrot::init(int argc, char * argv[])
 	_position[0] = MANDELBROT_INITIAL_X_OFFSET;
 	_position[1] = 0;
 
-	// parsing arguments
+	// check for settings file
+	const char * file_arg_name =  "args.txt";
+	FILE * f = fopen(file_arg_name, "r");
+	char *file_argv[128];
+	int file_arg_name_len = strlen(file_arg_name);
+	file_argv[0] = new char[file_arg_name_len+1];
+	strcpy(file_argv[0], file_arg_name);
+	if(f){
+		printf("Loading settings from 'args.txt'...\n");
+		int file_argc = 1;
+		char buffer[128];
+		while(fscanf(f, "%s", buffer) == 1){
+			int buffer_len = strlen(buffer);
+			file_argv[file_argc] = new char[buffer_len+1];
+			strcpy(file_argv[file_argc], buffer);
+			file_argc++;
+		}
+		if(parseArguments(file_argc, file_argv)){
+			return 1;
+		}
+		fclose(f);
+	}
+
+	// parsing arguments from commandline
 	if(parseArguments(argc, argv)){
 		return 1;
 	}
+
+	_settings.print();
 
 	// initialize framework
 	if(initWindow()){
