@@ -1,7 +1,5 @@
 #include <SDL2/SDL.h>
-#include "glew/glew.h"
 #include "mandel_shader.h"
-//#include "shader.h"
 #include <string.h>
 
 #define MANDELBROT_MAX_COLORS 1024

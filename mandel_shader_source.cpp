@@ -59,7 +59,7 @@ const char * MANDEL_FRAGMENT_SHADER =
 
 // double precision
 const char * MANDEL_FRAGMENT_SHADER_DOUBLE = 
-	"#version 400\n"
+	"#version 410 core\n"
 	"out vec4 color;\n"
 	"uniform int max_iterations;\n"
 	"uniform dmat3 transform;\n"

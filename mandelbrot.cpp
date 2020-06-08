@@ -65,9 +65,9 @@ int Mandelbrot::initWindow()
 	SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
 	SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 16);
 	SDL_GL_SetAttribute(SDL_GL_BUFFER_SIZE, 32);
-	if(_settings.doublePrecision){// version 4.0 needed for double precision
+	if(_settings.doublePrecision){// version 4.1 needed for double precision
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
-		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 	}
 	else{
 		SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 2);
@@ -197,7 +197,7 @@ void Mandelbrot::printHelp()
 			"--framerate <fps>         set framerate\n"
 			"--multisamples <samples>  specify number of samples for multisampling (e.g. 2, 4, 8)\n"
 			"--max_iterations <value>  number of maximum iterations to determine whether value is in the set\n"
-			"--double_precision        use 64 bit floats instead of 32 bit floats (requires GLSL version >= 4.0)\n"
+			"--double_precision        use 64 bit floats instead of 32 bit floats (requires OpenGL version >= 4.1)\n"
 			"--colors <file>           specify a .bmp file containing a colormap\n"
 			"--julia                   enables full julia set instead of mandelbrot (start value for z can be selected using the mouse)\n"
 			"--nearest                 use nearest texture filtering for the color map instead of linear\n"
